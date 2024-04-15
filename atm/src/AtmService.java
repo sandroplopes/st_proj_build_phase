@@ -1,6 +1,7 @@
 import java.net.Socket;
 import java.io.*;
 
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 
@@ -31,8 +32,10 @@ public class AtmService {
 
     public static void main(String[] args) throws Exception {
 
-        if (args.length == 0 || args.length == 1 || args.length > 4096)
+        if (args.length == 0 || args.length == 1 || args.length > 4096) {
+            System.out.println(255);
             System.exit(255);
+        }
 
         Options options = cliParser();
         CommandLineParser parser = new DefaultParser(true);
@@ -68,90 +71,99 @@ public class AtmService {
                     cmd_hashmap.put("g", "0");
                 }
             }
-        } catch (Exception e) {
+
+
+            File bankAuth = new File(dir +"/src/"+BANK_AUTH_FILE_NAME);
+            if(!bankAuth.exists()){
+                System.out.println(255);
+                System.exit(255);
+            }
+            FileInputStream fis = new FileInputStream(dir + "/src/" + BANK_AUTH_FILE_NAME);
+            byte[] encodedPublicKey = new byte[(int) bankAuth.length()];
+            fis.read(encodedPublicKey);
+            fis.close();
+
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(encodedPublicKey);
+            anti_man_in_the_middle_key = keyFactory.generatePublic(publicKeySpec);
+
+            socketToServer = new Socket(BANK_IP_ADDRESS, BANK_SERVER_PORT);
+            out = new ObjectOutputStream(socketToServer.getOutputStream());
+            inp = new ObjectInputStream(socketToServer.getInputStream());
+            generatedSymmetricKey = getSymmetricKey(inp, out);
+
+
+            sendData("Hello", seqNumber);
+            String res = receiveData();
+            if (!res.equals("HelloThere")) {
+                System.out.println(255);
+                System.exit(255);
+            }
+
+            seqNumber += 1;
+            String name = cmd_hashmap.get("a");
+            String card = cmd_hashmap.get("c") != null && cmd_hashmap.get("c").endsWith(".card") ? cmd_hashmap.get("c") : name + ".card";
+
+            if (cmd_hashmap.get("n") != null) {
+                sendData("n", seqNumber);
+                res = receiveData();
+                if (!res.equals("confirm")) {
+                    System.out.println(255);
+                    System.exit(255);
+                }
+                seqNumber += 1;
+                String info = name + "#" + cmd_hashmap.get("n") + "#" + createCard(card);
+                sendData(info, seqNumber);
+            } else if (cmd_hashmap.get("d") != null) {
+                sendData("d", seqNumber);
+                res = receiveData();
+                if (!res.equals("confirm")) {
+                    System.out.println(255);
+                    System.exit(255);
+                }
+                seqNumber += 1;
+                String info = name + "#" + cmd_hashmap.get("d") + "#" + readCardPin(card);
+                sendData(info, seqNumber);
+            } else if (cmd_hashmap.get("w") != null) {
+                sendData("w", seqNumber);
+                res = receiveData();
+                if (!res.equals("confirm")) {
+                    System.out.println(255);
+                    System.exit(255);
+                }
+                seqNumber += 1;
+                String info = name + "#" + cmd_hashmap.get("w") + "#" + readCardPin(card);
+                sendData(info, seqNumber);
+            } else if (cmd_hashmap.get("g") != null) {
+                sendData("g", seqNumber);
+                res = receiveData();
+                if (!res.equals("confirm")) {
+                    System.out.println(255);
+                    System.exit(255);
+                }
+                seqNumber += 1;
+                String info = name + "#" + cmd_hashmap.get("g") + "#" + readCardPin(card);
+                sendData(info, seqNumber);
+            }
+            res = receiveData();
+            if (res.equals("no_confirm")) {
+                System.out.println(255);
+                System.exit(255);
+            }
+
+            System.out.println(res);
+        } catch (SocketException se) {
+            System.out.println(63);
+            System.exit(63);
+        }
+        catch (Exception e) {
+            System.out.println(255);
             System.exit(255);
         }
-
-        File bankAuth = new File(dir +"/src/"+BANK_AUTH_FILE_NAME);
-        if(!bankAuth.exists()){
-            System.exit(255);
-        }
-        FileInputStream fis = new FileInputStream(dir + "/src/" + BANK_AUTH_FILE_NAME);
-        byte[] encodedPublicKey = new byte[(int) bankAuth.length()];
-        fis.read(encodedPublicKey);
-        fis.close();
-
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(encodedPublicKey);
-        anti_man_in_the_middle_key = keyFactory.generatePublic(publicKeySpec);
-
-        socketToServer = new Socket(BANK_IP_ADDRESS, BANK_SERVER_PORT);
-        out = new ObjectOutputStream(socketToServer.getOutputStream());
-        inp = new ObjectInputStream(socketToServer.getInputStream());
-        generatedSymmetricKey = getSymmetricKey(inp, out);
-
-
-        sendData("Hello", seqNumber);
-        String res = receiveData();
-        if (!res.equals("HelloThere"))
-            System.exit(255);
-
-        seqNumber += 1;
-
-        if (cmd_hashmap.get("n") != null) {
-            sendData("n", seqNumber);
-            res = receiveData();
-            if (!res.equals("confirm"))
-                System.exit(255);
-            seqNumber += 1;
-            String name = cmd_hashmap.get("a");
-            name = cmd_hashmap.get("c") != null ? cmd_hashmap.get("c") : name;
-            name = name.endsWith(".card") ? name : name + ".card";
-            String info = cmd_hashmap.get("a") + "#" + cmd_hashmap.get("n") + "#" + createCard(name);
-            sendData(info, seqNumber);
-        } else if (cmd_hashmap.get("d") != null) {
-            sendData("d", seqNumber);
-            res = receiveData();
-            if (!res.equals("confirm"))
-                System.exit(255);
-            seqNumber += 1;
-            String name = cmd_hashmap.get("a");
-            name = cmd_hashmap.get("c") != null ? cmd_hashmap.get("c") : name;
-            name = name.endsWith(".card") ? name : name + ".card";
-            String info = cmd_hashmap.get("a") + "#" + cmd_hashmap.get("d") + "#" + readCardPin(name);
-            sendData(info, seqNumber);
-        } else if (cmd_hashmap.get("w") != null) {
-            sendData("w", seqNumber);
-            res = receiveData();
-            if (!res.equals("confirm"))
-                System.exit(255);
-            seqNumber += 1;
-            String name = cmd_hashmap.get("a");
-            name = cmd_hashmap.get("c") != null ? cmd_hashmap.get("c") : name;
-            name = name.endsWith(".card") ? name : name + ".card";
-            String info = cmd_hashmap.get("a") + "#" + cmd_hashmap.get("w") + "#" + readCardPin(name);
-            sendData(info, seqNumber);
-        } else if (cmd_hashmap.get("g") != null) {
-            sendData("g", seqNumber);
-            res = receiveData();
-            if (!res.equals("confirm"))
-                System.exit(255);
-            seqNumber += 1;
-            String name = cmd_hashmap.get("a");
-            name = cmd_hashmap.get("c") != null ? cmd_hashmap.get("c") : name;
-            name = name.endsWith(".card") ? name : name + ".card";
-            String info = cmd_hashmap.get("a") + "#" + cmd_hashmap.get("g") + "#" + readCardPin(name);
-            sendData(info, seqNumber);
-        }
-        res = receiveData();
-        if (res.equals("no_confirm"))
-            System.exit(255);
-
-        System.out.println(res);
     }
 
     public static Options cliParser() {
-        try{
+        try {
             Options options = new Options();
 
             Option account = new Option("a", "account", true, "the customer bank account name");
@@ -186,6 +198,7 @@ public class AtmService {
 
             return options;
         }catch (Exception e){
+            System.out.println(255);
             System.exit(255);
         }
         return null;
@@ -249,15 +262,19 @@ public class AtmService {
         String hashed = (String) inp.readObject();
         byte[] notHash = (byte[]) inp.readObject();
         String integrity_check = obtainMACSHA256(generatedSymmetricKey, notHash);
-        if (!integrity_check.equals(hashed))
+        if (!integrity_check.equals(hashed)) {
+            System.out.println(255);
             System.exit(255);
+        }
         byte[] recovered = decrypt(notHash, anti_man_in_the_middle_key);
         recovered = decrypt(recovered, generatedSymmetricKey);
         String[] msg = new String(recovered, StandardCharsets.UTF_8).split(";");
         if (seqNumber == 0)
             seqNumber = Integer.parseInt(msg[0]);
-        else if (Integer.parseInt(msg[0]) != seqNumber)
+        else if (Integer.parseInt(msg[0]) != seqNumber) {
+            System.out.println(255);
             System.exit(255);
+        }
         return msg[1];
     }
 
@@ -275,6 +292,7 @@ public class AtmService {
         }
         File cardFile = new File(dir +"/src/CardFiles/" +cardName);
         if (cardFile.exists()) {
+            System.out.println(255);
             System.exit(255);
         }
         Random random = new Random();

@@ -5,6 +5,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.interfaces.DHPublicKey;
 import javax.crypto.spec.DHParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
@@ -18,7 +19,7 @@ public class AtmServiceHandler implements Runnable{
     private ObjectInputStream inp;
     private ObjectOutputStream out;
     private KeyPair bank_keys;
-    private ConcurrentHashMap<String, Account> clients;
+    private static ConcurrentHashMap<String, Account> clients;
     private SecretKey generatedSymmetricKey;
     private static SecureRandom rand = new SecureRandom();
     private static int sequenceNumber;
@@ -29,8 +30,8 @@ public class AtmServiceHandler implements Runnable{
         this.out = new ObjectOutputStream(atmClientSocket.getOutputStream());
 
         this.bank_keys = keypair;
-        this.clients = clients;
         this.generatedSymmetricKey = getSymmetricKey(inp, out);
+        AtmServiceHandler.clients = clients;
         sequenceNumber = rand.nextInt() + 1;
     }
 
@@ -43,17 +44,18 @@ public class AtmServiceHandler implements Runnable{
             sequenceNumber += 1;
             String action = receiveData();
             String received;
+            String[] params;
 
             switch (action) {
                 case "n" -> {
                     sendData("confirm");
                     sequenceNumber += 1;
                     received = receiveData();
-                    String[] params = received.split("#");
-                    Account acc = clients.get(params[0]);
-                    if (Double.parseDouble(params[1]) >= 10 && acc == null) {
-                        Account new_acc = new Account(params[0], params[1], params[2]);
-                        clients.put(params[0], new_acc);
+                    params = received.split("#");
+                    Account acc = clients.get(params[0]) == null ? new Account(params[0], params[1], params[2]) : clients.get(params[0]);
+
+                    if (Double.parseDouble(params[1]) >= 10 && !clients.containsKey(acc.getName())) {
+                        clients.put(params[0], acc);
                         System.out.println("{\"account\":\"" + params[0] + "\",\"initial_balance\":" + params[1] + "\"}");
                         sendData("{\"account\":\"" + params[0] + "\",\"initial_balance\":" + params[1] + "\"}");
                     } else {
@@ -64,7 +66,7 @@ public class AtmServiceHandler implements Runnable{
                     sendData("confirm");
                     sequenceNumber += 1;
                     received = receiveData();
-                    String[] params = received.split("#");
+                    params = received.split("#");
                     Account c = clients.get(params[0]);
                     if (c.getPin() != Integer.parseInt(params[2])) {
                         sendData("no_confirm");
@@ -78,7 +80,7 @@ public class AtmServiceHandler implements Runnable{
                     sendData("confirm");
                     sequenceNumber += 1;
                     received = receiveData();
-                    String[] params = received.split("#");
+                    params = received.split("#");
                     Account c = clients.get(params[0]);
                     if (c.getPin() != Integer.parseInt(params[2])) {
                         sendData("no_confirm");
@@ -96,7 +98,7 @@ public class AtmServiceHandler implements Runnable{
                     sendData("confirm");
                     sequenceNumber += 1;
                     received = receiveData();
-                    String[] params = received.split("#");
+                    params = received.split("#");
                     Account c = clients.get(params[0]);
                     if (c.getPin() != Integer.parseInt(params[2])) {
                         sendData("no_confirm");
@@ -107,7 +109,12 @@ public class AtmServiceHandler implements Runnable{
                 }
             }
         } catch (Exception ex) {
-            System.exit(255);
+            if (ex.getMessage() == null) {
+                System.out.print("");
+            } else {
+                System.out.println(255);
+                System.exit(255);
+            }
         }
     }
 
@@ -147,7 +154,8 @@ public class AtmServiceHandler implements Runnable{
             cipher.init(Cipher.ENCRYPT_MODE, key);
             return cipher.doFinal(data);
         } catch (Exception ex) {
-            System.err.println(ex.getMessage());
+            //System.err.println(ex.getMessage());
+            System.out.println(255);
             return data;
         }
     }
@@ -158,12 +166,14 @@ public class AtmServiceHandler implements Runnable{
             cipher.init(Cipher.DECRYPT_MODE, key);
             return cipher.doFinal(data);
         } catch (Exception ex) {
-            System.err.println(ex.getMessage());
+            //System.err.println(ex.getMessage());
+            System.out.println(255);
             return data;
         }
     }
 
     public void sendData(String commands) throws Exception {
+
         commands = sequenceNumber + ";" + commands;
         byte[] dataToSendEncrypted = encrypt(commands.getBytes(StandardCharsets.UTF_8), generatedSymmetricKey);
         dataToSendEncrypted = encrypt(dataToSendEncrypted, bank_keys.getPrivate());
@@ -174,6 +184,7 @@ public class AtmServiceHandler implements Runnable{
     }
 
     public String receiveData() throws Exception {
+
         String hashed = (String) inp.readObject();
         byte[] notHash = (byte[]) inp.readObject();
         Mac mac = Mac.getInstance("HmacSHA256");
@@ -181,6 +192,7 @@ public class AtmServiceHandler implements Runnable{
         mac.update(notHash);
         String integrity_check = new String(mac.doFinal(), StandardCharsets.UTF_8);
         if (!integrity_check.equals(hashed)) {
+            System.out.println(255);
             System.exit(255);
         }
         byte[] recovered = decrypt(notHash, bank_keys.getPrivate());
@@ -189,6 +201,7 @@ public class AtmServiceHandler implements Runnable{
         if (Integer.parseInt(msg[0]) == 0) {
             return msg[1];
         } else if (Integer.parseInt(msg[0]) != sequenceNumber) {
+            System.out.println(255);
             System.exit(255);
         }
         return msg[1];

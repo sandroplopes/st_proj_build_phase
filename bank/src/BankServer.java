@@ -65,14 +65,15 @@ public class BankServer {
                 }
             }
 
-
             //create server and serv
             BankServer bs = new BankServer(BANK_SERVER_PORT);
             KeyPair kp = bs.writeAuthFile(AUTH_FILE_NAME);
             bs.serv(kp);
 
         } catch (Exception e) {
-            System.err.println(e.getMessage());
+            //System.err.println(e.getMessage());
+            System.out.println(255);
+            System.exit(255);
         }
     }
 
@@ -101,11 +102,11 @@ public class BankServer {
 
         KeyPair keypair = keyGen.generateKeyPair();
         X509EncodedKeySpec x509EncodedKeySpec = new X509EncodedKeySpec(keypair.getPublic().getEncoded());
-        File filePublicKey = new File(dir+"/src/"+AUTH_FILE_NAME);
+        File filePublicKey = new File(dir + "/src/" + AUTH_FILE_NAME);
         if (filePublicKey.exists())
             System.exit(255);
 
-        FileOutputStream fos = new FileOutputStream(dir+"/src/"+AUTH_FILE_NAME);
+        FileOutputStream fos = new FileOutputStream(dir + "/src/" + AUTH_FILE_NAME);
         fos.write(x509EncodedKeySpec.getEncoded());
         fos.close();
 
